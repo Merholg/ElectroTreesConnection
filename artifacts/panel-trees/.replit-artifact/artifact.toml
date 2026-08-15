@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "ElectroTreesConnection"
+description = "Web app for electricians and facility managers to map, track, and store hierarchical circuit tree connections for electrical panels. Supports electrical load data entry, single-line diagram notes, and panel hierarchy management."
+version = "1.0.0"
+id = "artifacts/panel-trees"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18400
+
+[services.development]
+run = "pnpm --filter @workspace/panel-trees run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/panel-trees", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/panel-trees/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18400"
+BASE_PATH = "/"

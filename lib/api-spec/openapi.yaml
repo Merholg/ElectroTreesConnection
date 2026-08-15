@@ -1,22 +1,25 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
+  # Do not change the title — it controls generated filenames
   title: Api
   version: 0.1.0
-  description: API specification
+  description: ElectroTreesConnection API — electrical panel circuit tree database
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: panels
+  - name: nodes
+  - name: diagrams
+  - name: dashboard
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +27,558 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ── Panels ──────────────────────────────────────────────────────────────────
+  /panels:
+    get:
+      operationId: listPanels
+      tags: [panels]
+      summary: List all electrical panels
+      responses:
+        "200":
+          description: List of panels
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Panel"
+    post:
+      operationId: createPanel
+      tags: [panels]
+      summary: Create a new panel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PanelInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Panel"
+        "400":
+          description: Invalid input
+
+  /panels/{id}:
+    get:
+      operationId: getPanel
+      tags: [panels]
+      summary: Get a panel by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Panel found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Panel"
+        "404":
+          description: Not found
+    patch:
+      operationId: updatePanel
+      tags: [panels]
+      summary: Update a panel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PanelUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Panel"
+        "404":
+          description: Not found
+    delete:
+      operationId: deletePanel
+      tags: [panels]
+      summary: Delete a panel and all its nodes and diagrams
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /panels/{id}/load-summary:
+    get:
+      operationId: getPanelLoadSummary
+      tags: [panels]
+      summary: Get load summary for a panel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Load summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PanelLoadSummary"
+        "404":
+          description: Not found
+
+  # ── Circuit nodes ────────────────────────────────────────────────────────────
+  /panels/{panelId}/nodes:
+    get:
+      operationId: listPanelNodes
+      tags: [nodes]
+      summary: List all circuit nodes for a panel (flat list with parentId for tree)
+      parameters:
+        - name: panelId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of nodes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CircuitNode"
+        "404":
+          description: Panel not found
+    post:
+      operationId: createNode
+      tags: [nodes]
+      summary: Create a circuit node within a panel
+      parameters:
+        - name: panelId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CircuitNodeInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CircuitNode"
+        "400":
+          description: Invalid input
+        "404":
+          description: Panel not found
+
+  /nodes/{id}:
+    get:
+      operationId: getNode
+      tags: [nodes]
+      summary: Get a circuit node by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Node found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CircuitNode"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateNode
+      tags: [nodes]
+      summary: Update a circuit node
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CircuitNodeUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CircuitNode"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteNode
+      tags: [nodes]
+      summary: Delete a circuit node (and all its children)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  # ── Diagrams ─────────────────────────────────────────────────────────────────
+  /panels/{panelId}/diagrams:
+    get:
+      operationId: listDiagrams
+      tags: [diagrams]
+      summary: List single-line diagram entries for a panel
+      parameters:
+        - name: panelId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of diagrams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Diagram"
+        "404":
+          description: Panel not found
+    post:
+      operationId: createDiagram
+      tags: [diagrams]
+      summary: Create a diagram entry for a panel
+      parameters:
+        - name: panelId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiagramInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Diagram"
+        "400":
+          description: Invalid input
+        "404":
+          description: Panel not found
+
+  /diagrams/{id}:
+    get:
+      operationId: getDiagram
+      tags: [diagrams]
+      summary: Get a diagram by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Diagram found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Diagram"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateDiagram
+      tags: [diagrams]
+      summary: Update a diagram
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiagramUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Diagram"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteDiagram
+      tags: [diagrams]
+      summary: Delete a diagram
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  # ── Dashboard (wow) ──────────────────────────────────────────────────────────
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get dashboard summary — total counts, load, and per-panel stats
+      responses:
+        "200":
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    # ── Panel schemas ──────────────────────────────────────────────────────────
+    Panel:
+      type: object
+      required: [id, name, panelType, voltage, phases, createdAt, updatedAt]
+      properties:
+        id:          { type: integer }
+        name:        { type: string }
+        location:    { type: ["string", "null"] }
+        description: { type: ["string", "null"] }
+        panelType:
+          type: string
+          enum: [main, distribution, sub]
+        voltage:     { type: integer, description: "Nominal voltage in volts (e.g. 220, 380, 400)" }
+        phases:      { type: integer, description: "Number of phases: 1 or 3" }
+        installedAt: { type: ["string", "null"], format: date }
+        createdAt:   { type: string, format: date-time }
+        updatedAt:   { type: string, format: date-time }
+
+    PanelInput:
+      type: object
+      required: [name, panelType, voltage, phases]
+      properties:
+        name:        { type: string, minLength: 1 }
+        location:    { type: string }
+        description: { type: string }
+        panelType:
+          type: string
+          enum: [main, distribution, sub]
+        voltage:     { type: integer }
+        phases:      { type: integer }
+        installedAt: { type: string, format: date }
+
+    PanelUpdate:
+      type: object
+      properties:
+        name:        { type: string, minLength: 1 }
+        location:    { type: string }
+        description: { type: string }
+        panelType:
+          type: string
+          enum: [main, distribution, sub]
+        voltage:     { type: integer }
+        phases:      { type: integer }
+        installedAt: { type: ["string", "null"], format: date }
+
+    PanelLoadSummary:
+      type: object
+      required: [panelId, totalLoadKw, totalCurrentA, nodesByStatus, nodesByType]
+      properties:
+        panelId:      { type: integer }
+        totalLoadKw:  { type: number }
+        totalCurrentA: { type: number }
+        nodesByStatus:
+          type: object
+          properties:
+            active:     { type: integer }
+            overloaded: { type: integer }
+            fault:      { type: integer }
+            inactive:   { type: integer }
+          required: [active, overloaded, fault, inactive]
+        nodesByType:
+          type: object
+          properties:
+            breaker: { type: integer }
+            fuse:    { type: integer }
+            busbar:  { type: integer }
+            switch:  { type: integer }
+            load:    { type: integer }
+          required: [breaker, fuse, busbar, switch, load]
+
+    # ── Circuit node schemas ───────────────────────────────────────────────────
+    CircuitNode:
+      type: object
+      required: [id, panelId, name, nodeType, status, phaseCount, createdAt, updatedAt]
+      properties:
+        id:           { type: integer }
+        panelId:      { type: integer }
+        parentId:     { type: ["integer", "null"] }
+        name:         { type: string }
+        description:  { type: ["string", "null"] }
+        nodeType:
+          type: string
+          enum: [breaker, fuse, busbar, switch, load]
+        breakerRating: { type: ["number", "null"], description: "Rating in amperes" }
+        phaseCount:   { type: integer, description: "1, 2, or 3" }
+        status:
+          type: string
+          enum: [active, overloaded, fault, inactive]
+        loadPower:    { type: ["number", "null"], description: "Active power in kW" }
+        loadCurrent:  { type: ["number", "null"], description: "Current in amperes" }
+        powerFactor:  { type: ["number", "null"], description: "cos φ, 0–1" }
+        demandFactor: { type: ["number", "null"], description: "Demand factor, 0–1" }
+        notes:        { type: ["string", "null"] }
+        createdAt:    { type: string, format: date-time }
+        updatedAt:    { type: string, format: date-time }
+
+    CircuitNodeInput:
+      type: object
+      required: [name, nodeType]
+      properties:
+        parentId:     { type: integer }
+        name:         { type: string, minLength: 1 }
+        description:  { type: string }
+        nodeType:
+          type: string
+          enum: [breaker, fuse, busbar, switch, load]
+        breakerRating: { type: number }
+        phaseCount:   { type: integer, default: 1 }
+        status:
+          type: string
+          enum: [active, overloaded, fault, inactive]
+          default: active
+        loadPower:    { type: number }
+        loadCurrent:  { type: number }
+        powerFactor:  { type: number }
+        demandFactor: { type: number }
+        notes:        { type: string }
+
+    CircuitNodeUpdate:
+      type: object
+      properties:
+        parentId:     { type: ["integer", "null"] }
+        name:         { type: string, minLength: 1 }
+        description:  { type: ["string", "null"] }
+        nodeType:
+          type: string
+          enum: [breaker, fuse, busbar, switch, load]
+        breakerRating: { type: ["number", "null"] }
+        phaseCount:   { type: integer }
+        status:
+          type: string
+          enum: [active, overloaded, fault, inactive]
+        loadPower:    { type: ["number", "null"] }
+        loadCurrent:  { type: ["number", "null"] }
+        powerFactor:  { type: ["number", "null"] }
+        demandFactor: { type: ["number", "null"] }
+        notes:        { type: ["string", "null"] }
+
+    # ── Diagram schemas ────────────────────────────────────────────────────────
+    Diagram:
+      type: object
+      required: [id, panelId, title, createdAt, updatedAt]
+      properties:
+        id:        { type: integer }
+        panelId:   { type: integer }
+        title:     { type: string }
+        content:   { type: ["string", "null"], description: "Diagram notes, description, or text-format single-line diagram" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    DiagramInput:
+      type: object
+      required: [title]
+      properties:
+        title:   { type: string, minLength: 1 }
+        content: { type: string }
+
+    DiagramUpdate:
+      type: object
+      properties:
+        title:   { type: string, minLength: 1 }
+        content: { type: ["string", "null"] }
+
+    # ── Dashboard schemas ──────────────────────────────────────────────────────
+    PanelStat:
+      type: object
+      required: [id, name, panelType, nodeCount, totalLoadKw, faultCount]
+      properties:
+        id:          { type: integer }
+        name:        { type: string }
+        location:    { type: ["string", "null"] }
+        panelType:   { type: string }
+        nodeCount:   { type: integer }
+        totalLoadKw: { type: number }
+        faultCount:  { type: integer }
+
+    Dashboard:
+      type: object
+      required: [totalPanels, totalNodes, totalLoadKw, activeNodes, faultNodes, overloadedNodes, recentPanels]
+      properties:
+        totalPanels:    { type: integer }
+        totalNodes:     { type: integer }
+        totalLoadKw:    { type: number }
+        activeNodes:    { type: integer }
+        faultNodes:     { type: integer }
+        overloadedNodes: { type: integer }
+        recentPanels:
+          type: array
+          items:
+            $ref: "#/components/schemas/PanelStat"

@@ -1,0 +1,19 @@
+kind = "design-system"
+previewPath = "/electrotrees-ds/"
+title = "ElectroTreesConnection Design System"
+description = "Industrial-dark design system for ElectroTreesConnection — a technical tool used by electricians and facility managers to map, track, and store hierarchical circuit tree connections for electrical panels. Features an amber-on-dark palette inspired by HMI/SCADA control software, monospace type pairing, and high-contrast components optimized for dense technical data."
+version = "1.0.0"
+id = "artifacts/electrotrees-ds"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/electrotrees-ds/" ]
+localPort = 22580
+
+[services.development]
+run = "pnpm --filter @workspace/electrotrees-ds run dev"
+
+[services.env]
+PORT = "22580"
+BASE_PATH = "/electrotrees-ds/"
