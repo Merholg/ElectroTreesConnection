@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<project name="Trees-Connections" database="LogicalDesign" id="c1278e0b-1744-4fe7-8121-0a20c8548cab" >
+	<comment><![CDATA[database of tree's connections for electrical panels]]></comment>
+	<schema name="Schema_Trees-Connections" >
+		<table name="BranchTypes" prior="BranchType" >
+			<column name="BranchTypeID" type="BIGINT" mandatory="y" />
+			<column name="BranchTypeDescr" type="TEXT" mandatory="y" />
+			<index name="pk_BranchTypes" unique="PRIMARY_KEY" >
+				<column name="BranchTypeID" />
+			</index>
+			<fk name="fk_BranchTypes_Branches" to_schema="Schema_Trees-Connections" to_table="Branches" type="NonIdentifying" mandatory="y" cardinality="ZeroMore" range_from="0" range_to="0" >
+				<fk_column name="BranchTypeID" pk="BranchTypeID" />
+			</fk>
+		</table>
+		<table name="Branches" prior="Branche" >
+			<comment><![CDATA[Провода]]></comment>
+			<column name="BranchID" type="BIGINT" mandatory="y" />
+			<column name="BranchName" type="TEXT" mandatory="y" />
+			<column name="BranchBeginNode" type="BIGINT" mandatory="y" />
+			<column name="BranchEndNode" type="BIGINT" mandatory="y" />
+			<column name="BranchTypeID" type="BIGINT" mandatory="y" />
+			<index name="pk_Branches" unique="PRIMARY_KEY" >
+				<column name="BranchID" />
+			</index>
+			<index name="unq_BranchBeginNode" unique="UNIQUE_INDEX" >
+				<column name="BranchBeginNode" />
+			</index>
+			<index name="unq_Branches_BranchBeginNode" unique="UNIQUE_KEY" >
+				<column name="BranchBeginNode" />
+			</index>
+			<index name="unq_BranchEndNode" unique="UNIQUE_INDEX" >
+				<column name="BranchEndNode" />
+			</index>
+			<index name="unq_Branches_BranchEndNode" unique="UNIQUE_KEY" >
+				<column name="BranchEndNode" />
+			</index>
+			<index name="unq_BranchTypeID" unique="UNIQUE_INDEX" >
+				<column name="BranchTypeID" />
+			</index>
+			<index name="unq_Branches_BranchTypeID" unique="UNIQUE_KEY" >
+				<column name="BranchTypeID" />
+			</index>
+			<fk name="fk_Branches_TracePoint" to_schema="Schema_Trees-Connections" to_table="TracePoint" type="NonIdentifying" mandatory="y" cardinality="ZeroMore" range_from="0" range_to="0" >
+				<fk_column name="BranchID" pk="BranchID" />
+			</fk>
+		</table>
+		<table name="Nodes" prior="Node" >
+			<column name="NodeID" type="BIGINT" mandatory="y" />
+			<column name="NodeName" type="TEXT" mandatory="y" />
+			<column name="PointID" type="BIGINT" mandatory="y" />
+			<index name="pk_Nodes" unique="PRIMARY_KEY" >
+				<column name="NodeID" />
+			</index>
+			<index name="unq_PointID" unique="UNIQUE_INDEX" >
+				<column name="PointID" />
+			</index>
+			<index name="unq_Nodes_PointID" unique="UNIQUE_KEY" >
+				<column name="PointID" />
+			</index>
+			<fk name="fk_Nodes_Branches" to_schema="Schema_Trees-Connections" to_table="Branches" type="NonIdentifying" mandatory="y" cardinality="ZeroMore" range_from="0" range_to="0" >
+				<fk_column name="NodeID" pk="BranchBeginNode" />
+			</fk>
+			<fk name="fk_Nodes_Branches_0" to_schema="Schema_Trees-Connections" to_table="Branches" type="NonIdentifying" mandatory="y" cardinality="ZeroMore" range_from="0" range_to="0" >
+				<fk_column name="NodeID" pk="BranchEndNode" />
+			</fk>
+		</table>
+		<table name="Points" prior="Point" >
+			<column name="PointID" type="BIGINT" mandatory="y" />
+			<column name="PointCoordX" type="DECIMAL" mandatory="y" />
+			<column name="PointCoordY" type="DECIMAL" mandatory="y" />
+			<index name="pk_Point" unique="PRIMARY_KEY" >
+				<column name="PointID" />
+			</index>
+			<fk name="fk_Points_Nodes" to_schema="Schema_Trees-Connections" to_table="Nodes" type="NonIdentifying" mandatory="y" cardinality="ZeroMore" range_from="0" range_to="0" >
+				<fk_column name="PointID" pk="PointID" />
+			</fk>
+			<fk name="fk_Points_TracePoint" to_schema="Schema_Trees-Connections" to_table="TracePoint" type="NonIdentifying" mandatory="y" cardinality="ZeroMore" range_from="0" range_to="0" >
+				<fk_column name="PointID" pk="PointID" />
+			</fk>
+		</table>
+		<table name="TracePoint" prior="Entity" >
+			<column name="PointOrder" type="INT" mandatory="y" />
+			<column name="BranchID" type="BIGINT" mandatory="y" />
+			<column name="PointID" type="BIGINT" mandatory="y" />
+			<index name="pk_BranchID" unique="PRIMARY_KEY" >
+				<column name="BranchID" />
+			</index>
+			<index name="unq_TracePoint_PointOrder" unique="UNIQUE_INDEX" >
+				<column name="PointOrder" />
+				<column name="BranchID" />
+				<column name="PointID" />
+			</index>
+		</table>
+	</schema>
+	<diagram_group name="Default" id="bb55a121-62c1-4b6d-bbb1-8b23dbda5cd5" >
+		<diagram name="Trees-Connections-Diagram" id="6479c7f9-a91b-45a9-9c65-03f1d3f408cb" show_relation="columns" >
+			<entity schema="Schema_Trees-Connections" name="BranchTypes" color="C1D8EE" x="950" y="323" />
+			<entity schema="Schema_Trees-Connections" name="Branches" color="C1D8EE" x="722" y="57" />
+			<entity schema="Schema_Trees-Connections" name="Nodes" color="C1D8EE" x="342" y="57" />
+			<entity schema="Schema_Trees-Connections" name="Points" color="C1D8EE" x="57" y="266" />
+			<entity schema="Schema_Trees-Connections" name="TracePoint" color="C1D8EE" x="456" y="342" />
+		</diagram>
+	</diagram_group>
+</project>
