@@ -1,0 +1,1 @@
+- [Database availability](database-availability.md) — keep MySQL failures explicit; never hide an unavailable database with mock records.
