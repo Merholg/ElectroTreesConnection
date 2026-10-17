@@ -9,7 +9,6 @@ out-tsc
 .expo-shared
 __pycache__/
 *.py[cod]
-artifacts/api-server/data/*.sqlite3
 
 # dependencies
 node_modules

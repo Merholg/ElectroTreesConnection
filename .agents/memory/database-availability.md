@@ -3,8 +3,8 @@ name: Database availability behavior
 description: The app's SQLite storage and persistence constraints.
 ---
 
-ElectroTreesConnection uses a local SQLite database file created by the Flask API. The application should use real records and preserve clear loading/error states rather than substituting mock records. SQLite files in published Replit apps are temporary and can be lost when the deployment restarts, is republished, or scales to zero.
+ElectroTreesConnection is a free, non-commercial app, and its processed data is not confidential. The SQLite database file should be included in Git and in the deployment archive. The application should use real records and preserve clear loading/error states rather than substituting mock records. SQLite files in published Replit apps are temporary and runtime changes can be lost when the deployment restarts, is republished, or scales to zero.
 
-**Why:** The user selected SQLite for this project after learning the published filesystem is not durable; preserving the constraint prevents future code from silently implying production data is durable.
+**Why:** The user explicitly said the app is free/non-commercial, the data does not need confidentiality, and the SQLite file should not be excluded from Git or deployment archives.
 
-**How to apply:** Keep development data in the ignored SQLite file and never commit it. Before treating the app as production-ready for durable records, move persistence to a durable database or storage system with the user's approval.
+**How to apply:** Do not ignore the SQLite file for Git or deployment. Remember that records changed at runtime in the published app may be lost on restart; make that persistence limitation clear if relevant.
