@@ -196,7 +196,7 @@ function AppShell() {
             <div className="border-t border-sidebar-border p-4">
               <div className="flex items-center gap-3 rounded-md px-2 py-2 text-sidebar-foreground/70">
                 <Settings2 className="size-4" />
-                <span className="text-xs">MySQL / Flask API</span>
+                <span className="text-xs">SQLite / Flask API</span>
                 <span className="ml-auto size-2 rounded-full bg-chart-3" />
               </div>
             </div>
@@ -333,7 +333,7 @@ function DashboardPage() {
         }
       />
       {dashboard.isLoading ? (
-        <LoadingState label="Синхронизация с MySQL…" />
+        <LoadingState label="Синхронизация с SQLite…" />
       ) : dashboard.isError ? (
         <ErrorState />
       ) : data ? (
@@ -428,7 +428,7 @@ function DashboardPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <StatusRow label="Flask API" value="connected" />
-                <StatusRow label="MySQL schema" value="ready" />
+                <StatusRow label="SQLite schema" value="ready" />
                 <StatusRow label="Branch graph" value={`${branches.data?.length ?? 0} records`} />
                 <StatusRow label="Coordinate layer" value={`${points.data?.length ?? 0} points`} />
               </CardContent>
@@ -471,7 +471,7 @@ function BranchesPage() {
       { data: payload },
       {
         onSuccess: () => {
-          toast({ title: 'Ветвь добавлена', description: 'Связь записана в MySQL.' });
+          toast({ title: 'Ветвь добавлена', description: 'Связь записана в SQLite.' });
           setShowCreate(false);
           queryClient.invalidateQueries({ queryKey: getListBranchesQueryKey() });
           queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
@@ -826,7 +826,7 @@ function LoadingState({ label }: { label: string }) {
 }
 
 function ErrorState() {
-  return <div className="flex items-start gap-3 p-8 text-sm text-destructive"><CircleAlert className="mt-0.5 size-4 shrink-0" /><div><p className="font-medium">Не удалось получить данные</p><p className="mt-1 text-destructive/80">Проверьте подключение Flask API и доступность MySQL.</p></div></div>;
+  return <div className="flex items-start gap-3 p-8 text-sm text-destructive"><CircleAlert className="mt-0.5 size-4 shrink-0" /><div><p className="font-medium">Не удалось получить данные</p><p className="mt-1 text-destructive/80">Проверьте подключение Flask API и доступность SQLite.</p></div></div>;
 }
 
 function EmptyState({ title, description }: { title: string; description: string }) {

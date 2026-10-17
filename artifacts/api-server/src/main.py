@@ -2,17 +2,13 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 from contextlib import contextmanager
 from datetime import date, datetime
-from decimal import Decimal
+from pathlib import Path
 from typing import Any, Iterator
-from urllib.parse import unquote, urlparse
 
-import mysql.connector
 from flask import Flask, jsonify, request
-from mysql.connector import Error, IntegrityError
-from mysql.connector.connection import MySQLConnection
-from mysql.connector.cursor import MySQLCursorDict
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -29,29 +25,23 @@ def add_cors_headers(response: Any) -> Any:
     return response
 
 
-def connection_config() -> dict[str, Any]:
-    raw = os.environ.get("MYSQL_DATABASE_URL")
-    if not raw:
-        raise RuntimeError("MYSQL_DATABASE_URL is not configured")
-    parsed = urlparse(raw)
-    if parsed.scheme not in {"mysql", "mysql+mysqlconnector"}:
-        raise RuntimeError("MYSQL_DATABASE_URL must use the mysql:// scheme")
-    if not parsed.hostname or not parsed.path.strip("/"):
-        raise RuntimeError("MYSQL_DATABASE_URL must include host and database name")
-    return {
-        "host": parsed.hostname,
-        "port": parsed.port or 3306,
-        "user": unquote(parsed.username or ""),
-        "password": unquote(parsed.password or ""),
-        "database": parsed.path.strip("/"),
-        "connection_timeout": 8,
-    }
+def database_path() -> Path:
+    configured_path = os.environ.get("SQLITE_DATABASE_PATH")
+    path = (
+        Path(configured_path).expanduser()
+        if configured_path
+        else Path(__file__).resolve().parents[1] / "data" / "electrotrees.sqlite3"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 @contextmanager
-def db_cursor() -> Iterator[tuple[MySQLConnection, MySQLCursorDict]]:
-    connection = mysql.connector.connect(**connection_config())
-    cursor = connection.cursor(dictionary=True)
+def db_cursor() -> Iterator[tuple[sqlite3.Connection, sqlite3.Cursor]]:
+    connection = sqlite3.connect(database_path(), timeout=10)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
+    cursor = connection.cursor()
     try:
         yield connection, cursor
         connection.commit()
@@ -66,20 +56,18 @@ def db_cursor() -> Iterator[tuple[MySQLConnection, MySQLCursorDict]]:
 def json_value(value: Any) -> Any:
     if isinstance(value, (datetime, date)):
         return value.isoformat()
-    if isinstance(value, Decimal):
-        return float(value)
     return value
 
 
-def clean_row(row: dict[str, Any]) -> dict[str, Any]:
-    return {key: json_value(value) for key, value in row.items()}
+def clean_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {key: json_value(value) for key, value in dict(row).items()}
 
 
-def rows(cursor: MySQLCursorDict) -> list[dict[str, Any]]:
+def rows(cursor: sqlite3.Cursor) -> list[dict[str, Any]]:
     return [clean_row(row) for row in cursor.fetchall()]
 
 
-def one(cursor: MySQLCursorDict) -> dict[str, Any] | None:
+def one(cursor: sqlite3.Cursor) -> dict[str, Any] | None:
     row = cursor.fetchone()
     return clean_row(row) if row else None
 
@@ -113,55 +101,63 @@ def required_text(payload: dict[str, Any], field: str) -> str:
 SCHEMA_STATEMENTS = (
     """
     CREATE TABLE IF NOT EXISTS BranchTypes (
-      BranchTypeID BIGINT NOT NULL AUTO_INCREMENT,
-      BranchTypeDescr TEXT NOT NULL,
-      PRIMARY KEY (BranchTypeID)
-    ) ENGINE=InnoDB
+      BranchTypeID INTEGER PRIMARY KEY AUTOINCREMENT,
+      BranchTypeDescr TEXT NOT NULL
+    )
     """,
     """
     CREATE TABLE IF NOT EXISTS Points (
-      PointID BIGINT NOT NULL AUTO_INCREMENT,
-      PointCoordX DECIMAL(18,6) NOT NULL,
-      PointCoordY DECIMAL(18,6) NOT NULL,
-      PRIMARY KEY (PointID)
-    ) ENGINE=InnoDB
+      PointID INTEGER PRIMARY KEY AUTOINCREMENT,
+      PointCoordX REAL NOT NULL,
+      PointCoordY REAL NOT NULL
+    )
     """,
     """
     CREATE TABLE IF NOT EXISTS Nodes (
-      NodeID BIGINT NOT NULL AUTO_INCREMENT,
+      NodeID INTEGER PRIMARY KEY AUTOINCREMENT,
       NodeName TEXT NOT NULL,
-      PointID BIGINT NOT NULL,
-      PRIMARY KEY (NodeID),
-      UNIQUE KEY unq_Nodes_PointID (PointID),
-      CONSTRAINT fk_Nodes_Points FOREIGN KEY (PointID) REFERENCES Points(PointID)
-    ) ENGINE=InnoDB
+      PointID INTEGER NOT NULL,
+      UNIQUE (PointID),
+      FOREIGN KEY (PointID) REFERENCES Points(PointID)
+    )
     """,
     """
     CREATE TABLE IF NOT EXISTS Branches (
-      BranchID BIGINT NOT NULL AUTO_INCREMENT,
+      BranchID INTEGER PRIMARY KEY AUTOINCREMENT,
       BranchName TEXT NOT NULL,
-      BranchBeginNode BIGINT NOT NULL,
-      BranchEndNode BIGINT NOT NULL,
-      BranchTypeID BIGINT NOT NULL,
-      PRIMARY KEY (BranchID),
-      KEY idx_Branches_BeginNode (BranchBeginNode),
-      KEY idx_Branches_EndNode (BranchEndNode),
-      KEY idx_Branches_BranchTypeID (BranchTypeID),
-      CONSTRAINT fk_Branches_BeginNode FOREIGN KEY (BranchBeginNode) REFERENCES Nodes(NodeID),
-      CONSTRAINT fk_Branches_EndNode FOREIGN KEY (BranchEndNode) REFERENCES Nodes(NodeID),
-      CONSTRAINT fk_Branches_BranchType FOREIGN KEY (BranchTypeID) REFERENCES BranchTypes(BranchTypeID)
-    ) ENGINE=InnoDB
+      BranchBeginNode INTEGER NOT NULL,
+      BranchEndNode INTEGER NOT NULL,
+      BranchTypeID INTEGER NOT NULL,
+      FOREIGN KEY (BranchBeginNode) REFERENCES Nodes(NodeID),
+      FOREIGN KEY (BranchEndNode) REFERENCES Nodes(NodeID),
+      FOREIGN KEY (BranchTypeID) REFERENCES BranchTypes(BranchTypeID)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_Branches_BeginNode
+    ON Branches (BranchBeginNode)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_Branches_EndNode
+    ON Branches (BranchEndNode)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_Branches_BranchTypeID
+    ON Branches (BranchTypeID)
     """,
     """
     CREATE TABLE IF NOT EXISTS TracePoint (
       PointOrder INT NOT NULL,
-      BranchID BIGINT NOT NULL,
-      PointID BIGINT NOT NULL,
+      BranchID INTEGER NOT NULL,
+      PointID INTEGER NOT NULL,
       PRIMARY KEY (BranchID, PointOrder),
-      KEY idx_TracePoint_PointID (PointID),
-      CONSTRAINT fk_TracePoint_Branch FOREIGN KEY (BranchID) REFERENCES Branches(BranchID) ON DELETE CASCADE,
-      CONSTRAINT fk_TracePoint_Point FOREIGN KEY (PointID) REFERENCES Points(PointID)
-    ) ENGINE=InnoDB
+      FOREIGN KEY (BranchID) REFERENCES Branches(BranchID) ON DELETE CASCADE,
+      FOREIGN KEY (PointID) REFERENCES Points(PointID)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_TracePoint_PointID
+    ON TracePoint (PointID)
     """,
 )
 
@@ -248,9 +244,9 @@ def create_branch_type() -> tuple[Any, int]:
     try:
         name = required_text(body(), "branchTypeDescr")
         with db_cursor() as (_, cursor):
-            cursor.execute("INSERT INTO BranchTypes (BranchTypeDescr) VALUES (%s)", (name,))
+            cursor.execute("INSERT INTO BranchTypes (BranchTypeDescr) VALUES (?)", (name,))
             new_id = cursor.lastrowid
-            cursor.execute("SELECT BranchTypeID AS branchTypeId, BranchTypeDescr AS branchTypeDescr FROM BranchTypes WHERE BranchTypeID = %s", (new_id,))
+            cursor.execute("SELECT BranchTypeID AS branchTypeId, BranchTypeDescr AS branchTypeDescr FROM BranchTypes WHERE BranchTypeID = ?", (new_id,))
             result = one(cursor)
         return jsonify(result), 201
     except ValueError as exc:
@@ -262,10 +258,10 @@ def update_branch_type(item_id: int) -> Any:
     try:
         name = required_text(body(), "branchTypeDescr")
         with db_cursor() as (_, cursor):
-            cursor.execute("UPDATE BranchTypes SET BranchTypeDescr = %s WHERE BranchTypeID = %s", (name, item_id))
+            cursor.execute("UPDATE BranchTypes SET BranchTypeDescr = ? WHERE BranchTypeID = ?", (name, item_id))
             if cursor.rowcount == 0:
                 return jsonify({"error": "Branch type not found"}), 404
-            cursor.execute("SELECT BranchTypeID AS branchTypeId, BranchTypeDescr AS branchTypeDescr FROM BranchTypes WHERE BranchTypeID = %s", (item_id,))
+            cursor.execute("SELECT BranchTypeID AS branchTypeId, BranchTypeDescr AS branchTypeDescr FROM BranchTypes WHERE BranchTypeID = ?", (item_id,))
             return jsonify(one(cursor))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -275,11 +271,11 @@ def update_branch_type(item_id: int) -> Any:
 def delete_branch_type(item_id: int) -> tuple[Any, int]:
     try:
         with db_cursor() as (_, cursor):
-            cursor.execute("DELETE FROM BranchTypes WHERE BranchTypeID = %s", (item_id,))
+            cursor.execute("DELETE FROM BranchTypes WHERE BranchTypeID = ?", (item_id,))
             if cursor.rowcount == 0:
                 return jsonify({"error": "Branch type not found"}), 404
         return "", 204
-    except IntegrityError:
+    except sqlite3.IntegrityError:
         return jsonify({"error": "Branch type is still used by branches"}), 409
 
 
@@ -299,10 +295,10 @@ def list_branches() -> Any:
     query = branch_select() + " WHERE 1=1"
     params: list[Any] = []
     if search:
-        query += " AND b.BranchName LIKE %s"
+        query += " AND b.BranchName LIKE ?"
         params.append(f"%{search}%")
     if type_id:
-        query += " AND b.BranchTypeID = %s"
+        query += " AND b.BranchTypeID = ?"
         params.append(as_int(type_id, "branchTypeId"))
     query += " ORDER BY b.BranchID DESC"
     with db_cursor() as (_, cursor):
@@ -325,23 +321,23 @@ def create_branch() -> tuple[Any, int]:
         values = branch_payload(body())
         with db_cursor() as (_, cursor):
             cursor.execute(
-                "INSERT INTO Branches (BranchName, BranchBeginNode, BranchEndNode, BranchTypeID) VALUES (%s, %s, %s, %s)",
+                "INSERT INTO Branches (BranchName, BranchBeginNode, BranchEndNode, BranchTypeID) VALUES (?, ?, ?, ?)",
                 values,
             )
             item_id = cursor.lastrowid
-            cursor.execute(branch_select() + " WHERE b.BranchID = %s", (item_id,))
+            cursor.execute(branch_select() + " WHERE b.BranchID = ?", (item_id,))
             result = one(cursor)
         return jsonify(result), 201
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-    except IntegrityError as exc:
+    except sqlite3.IntegrityError as exc:
         return jsonify({"error": f"Invalid node or branch type reference: {exc}"}), 400
 
 
 @app.get("/api/branches/<int:item_id>")
 def get_branch(item_id: int) -> Any:
     with db_cursor() as (_, cursor):
-        cursor.execute(branch_select() + " WHERE b.BranchID = %s", (item_id,))
+        cursor.execute(branch_select() + " WHERE b.BranchID = ?", (item_id,))
         result = one(cursor)
     return jsonify(result) if result else (jsonify({"error": "Branch not found"}), 404)
 
@@ -352,23 +348,23 @@ def update_branch(item_id: int) -> Any:
         values = branch_payload(body())
         with db_cursor() as (_, cursor):
             cursor.execute(
-                "UPDATE Branches SET BranchName=%s, BranchBeginNode=%s, BranchEndNode=%s, BranchTypeID=%s WHERE BranchID=%s",
+                "UPDATE Branches SET BranchName=?, BranchBeginNode=?, BranchEndNode=?, BranchTypeID=? WHERE BranchID=?",
                 (*values, item_id),
             )
             if cursor.rowcount == 0:
                 return jsonify({"error": "Branch not found"}), 404
-            cursor.execute(branch_select() + " WHERE b.BranchID = %s", (item_id,))
+            cursor.execute(branch_select() + " WHERE b.BranchID = ?", (item_id,))
             return jsonify(one(cursor))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-    except IntegrityError:
+    except sqlite3.IntegrityError:
         return jsonify({"error": "Invalid node or branch type reference"}), 400
 
 
 @app.delete("/api/branches/<int:item_id>")
 def delete_branch(item_id: int) -> tuple[Any, int]:
     with db_cursor() as (_, cursor):
-        cursor.execute("DELETE FROM Branches WHERE BranchID = %s", (item_id,))
+        cursor.execute("DELETE FROM Branches WHERE BranchID = ?", (item_id,))
         if cursor.rowcount == 0:
             return jsonify({"error": "Branch not found"}), 404
     return "", 204
@@ -396,13 +392,13 @@ def create_node() -> tuple[Any, int]:
         name = required_text(payload, "nodeName")
         point_id = as_int(payload.get("pointId"), "pointId")
         with db_cursor() as (_, cursor):
-            cursor.execute("INSERT INTO Nodes (NodeName, PointID) VALUES (%s, %s)", (name, point_id))
+            cursor.execute("INSERT INTO Nodes (NodeName, PointID) VALUES (?, ?)", (name, point_id))
             item_id = cursor.lastrowid
             cursor.execute(
                 """
                 SELECT n.NodeID AS nodeId, n.NodeName AS nodeName, n.PointID AS pointId,
                        p.PointCoordX AS pointCoordX, p.PointCoordY AS pointCoordY
-                FROM Nodes n JOIN Points p ON p.PointID=n.PointID WHERE n.NodeID=%s
+                FROM Nodes n JOIN Points p ON p.PointID=n.PointID WHERE n.NodeID=?
                 """,
                 (item_id,),
             )
@@ -410,7 +406,7 @@ def create_node() -> tuple[Any, int]:
         return jsonify(result), 201
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-    except IntegrityError:
+    except sqlite3.IntegrityError:
         return jsonify({"error": "Point does not exist or is already assigned to a node"}), 400
 
 
@@ -421,21 +417,21 @@ def update_node(item_id: int) -> Any:
         name = required_text(payload, "nodeName")
         point_id = as_int(payload.get("pointId"), "pointId")
         with db_cursor() as (_, cursor):
-            cursor.execute("UPDATE Nodes SET NodeName=%s, PointID=%s WHERE NodeID=%s", (name, point_id, item_id))
+            cursor.execute("UPDATE Nodes SET NodeName=?, PointID=? WHERE NodeID=?", (name, point_id, item_id))
             if cursor.rowcount == 0:
                 return jsonify({"error": "Node not found"}), 404
             cursor.execute(
                 """
                 SELECT n.NodeID AS nodeId, n.NodeName AS nodeName, n.PointID AS pointId,
                        p.PointCoordX AS pointCoordX, p.PointCoordY AS pointCoordY
-                FROM Nodes n JOIN Points p ON p.PointID=n.PointID WHERE n.NodeID=%s
+                FROM Nodes n JOIN Points p ON p.PointID=n.PointID WHERE n.NodeID=?
                 """,
                 (item_id,),
             )
             return jsonify(one(cursor))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-    except IntegrityError:
+    except sqlite3.IntegrityError:
         return jsonify({"error": "Point does not exist or is already assigned to a node"}), 400
 
 
@@ -443,11 +439,11 @@ def update_node(item_id: int) -> Any:
 def delete_node(item_id: int) -> tuple[Any, int]:
     try:
         with db_cursor() as (_, cursor):
-            cursor.execute("DELETE FROM Nodes WHERE NodeID=%s", (item_id,))
+            cursor.execute("DELETE FROM Nodes WHERE NodeID=?", (item_id,))
             if cursor.rowcount == 0:
                 return jsonify({"error": "Node not found"}), 404
         return "", 204
-    except IntegrityError:
+    except sqlite3.IntegrityError:
         return jsonify({"error": "Node is referenced by a branch"}), 409
 
 
@@ -465,9 +461,9 @@ def create_point() -> tuple[Any, int]:
         x = as_float(payload.get("pointCoordX"), "pointCoordX")
         y = as_float(payload.get("pointCoordY"), "pointCoordY")
         with db_cursor() as (_, cursor):
-            cursor.execute("INSERT INTO Points (PointCoordX, PointCoordY) VALUES (%s, %s)", (x, y))
+            cursor.execute("INSERT INTO Points (PointCoordX, PointCoordY) VALUES (?, ?)", (x, y))
             item_id = cursor.lastrowid
-            cursor.execute("SELECT PointID AS pointId, PointCoordX AS pointCoordX, PointCoordY AS pointCoordY FROM Points WHERE PointID=%s", (item_id,))
+            cursor.execute("SELECT PointID AS pointId, PointCoordX AS pointCoordX, PointCoordY AS pointCoordY FROM Points WHERE PointID=?", (item_id,))
             result = one(cursor)
         return jsonify(result), 201
     except ValueError as exc:
@@ -481,10 +477,10 @@ def update_point(item_id: int) -> Any:
         x = as_float(payload.get("pointCoordX"), "pointCoordX")
         y = as_float(payload.get("pointCoordY"), "pointCoordY")
         with db_cursor() as (_, cursor):
-            cursor.execute("UPDATE Points SET PointCoordX=%s, PointCoordY=%s WHERE PointID=%s", (x, y, item_id))
+            cursor.execute("UPDATE Points SET PointCoordX=?, PointCoordY=? WHERE PointID=?", (x, y, item_id))
             if cursor.rowcount == 0:
                 return jsonify({"error": "Point not found"}), 404
-            cursor.execute("SELECT PointID AS pointId, PointCoordX AS pointCoordX, PointCoordY AS pointCoordY FROM Points WHERE PointID=%s", (item_id,))
+            cursor.execute("SELECT PointID AS pointId, PointCoordX AS pointCoordX, PointCoordY AS pointCoordY FROM Points WHERE PointID=?", (item_id,))
             return jsonify(one(cursor))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -494,11 +490,11 @@ def update_point(item_id: int) -> Any:
 def delete_point(item_id: int) -> tuple[Any, int]:
     try:
         with db_cursor() as (_, cursor):
-            cursor.execute("DELETE FROM Points WHERE PointID=%s", (item_id,))
+            cursor.execute("DELETE FROM Points WHERE PointID=?", (item_id,))
             if cursor.rowcount == 0:
                 return jsonify({"error": "Point not found"}), 404
         return "", 204
-    except IntegrityError:
+    except sqlite3.IntegrityError:
         return jsonify({"error": "Point is referenced by a node or trace"}), 409
 
 
@@ -511,7 +507,7 @@ def list_trace_points(branch_id: int) -> Any:
                    t.PointID AS pointId, p.PointCoordX AS pointCoordX,
                    p.PointCoordY AS pointCoordY
             FROM TracePoint t JOIN Points p ON p.PointID=t.PointID
-            WHERE t.BranchID=%s ORDER BY t.PointOrder
+            WHERE t.BranchID=? ORDER BY t.PointOrder
             """,
             (branch_id,),
         )
@@ -525,14 +521,14 @@ def create_trace_point(branch_id: int) -> tuple[Any, int]:
         point_order = as_int(payload.get("pointOrder"), "pointOrder")
         point_id = as_int(payload.get("pointId"), "pointId")
         with db_cursor() as (_, cursor):
-            cursor.execute("INSERT INTO TracePoint (PointOrder, BranchID, PointID) VALUES (%s,%s,%s)", (point_order, branch_id, point_id))
+            cursor.execute("INSERT INTO TracePoint (PointOrder, BranchID, PointID) VALUES (?,?,?)", (point_order, branch_id, point_id))
             cursor.execute(
                 """
                 SELECT t.PointOrder AS pointOrder, t.BranchID AS branchId,
                        t.PointID AS pointId, p.PointCoordX AS pointCoordX,
                        p.PointCoordY AS pointCoordY
                 FROM TracePoint t JOIN Points p ON p.PointID=t.PointID
-                WHERE t.BranchID=%s AND t.PointOrder=%s
+                WHERE t.BranchID=? AND t.PointOrder=?
                 """,
                 (branch_id, point_order),
             )
@@ -540,14 +536,14 @@ def create_trace_point(branch_id: int) -> tuple[Any, int]:
         return jsonify(result), 201
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-    except IntegrityError:
+    except sqlite3.IntegrityError:
         return jsonify({"error": "Branch or point does not exist, or this order already exists"}), 400
 
 
 @app.delete("/api/trace/<int:branch_id>/<int:point_order>")
 def delete_trace_point(branch_id: int, point_order: int) -> tuple[Any, int]:
     with db_cursor() as (_, cursor):
-        cursor.execute("DELETE FROM TracePoint WHERE BranchID=%s AND PointOrder=%s", (branch_id, point_order))
+        cursor.execute("DELETE FROM TracePoint WHERE BranchID=? AND PointOrder=?", (branch_id, point_order))
         if cursor.rowcount == 0:
             return jsonify({"error": "Trace point not found"}), 404
     return "", 204
@@ -558,17 +554,22 @@ def handle_value_error(error: ValueError) -> tuple[Any, int]:
     return jsonify({"error": str(error)}), 400
 
 
-@app.errorhandler(Error)
-def handle_database_error(error: Error) -> tuple[Any, int]:
+@app.errorhandler(sqlite3.Error)
+def handle_database_error(error: sqlite3.Error) -> tuple[Any, int]:
     logger.exception("Database request failed")
     return jsonify({"error": "Database request failed", "detail": str(error)}), 503
 
 
-if __name__ == "__main__":
+def initialize_database() -> None:
     try:
         ensure_schema()
-        logger.info("MySQL schema is ready")
+        logger.info("SQLite schema is ready at %s", database_path())
     except Exception:
-        logger.exception("Could not initialize MySQL schema; API will start and report 503 until it is reachable")
+        logger.exception("Could not initialize SQLite schema")
 
+
+initialize_database()
+
+
+if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))

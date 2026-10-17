@@ -1,1 +1,1 @@
-- [Database availability](database-availability.md) — keep MySQL failures explicit; never hide an unavailable database with mock records.
+- [Database availability](database-availability.md) — use the app's SQLite file and keep real database failures visible; never substitute mock records.
