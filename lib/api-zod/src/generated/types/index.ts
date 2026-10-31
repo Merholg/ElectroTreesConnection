@@ -20,3 +20,4 @@ export * from './point';
 export * from './pointInput';
 export * from './tracePoint';
 export * from './tracePointInput';
+export * from './tracePointSequenceInput';

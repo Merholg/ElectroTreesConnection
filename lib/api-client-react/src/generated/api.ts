@@ -32,7 +32,8 @@ import type {
   Point,
   PointInput,
   TracePoint,
-  TracePointInput
+  TracePointInput,
+  TracePointSequenceInput
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -1491,6 +1492,72 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getCreateTracePointMutationOptions(options));
+    }
+
+export const getReorderTracePointsUrl = (branchId: number,) => {
+
+
+
+
+  return `/api/branches/${branchId}/trace`
+}
+
+export const reorderTracePoints = async (branchId: number,
+    tracePointSequenceInput: TracePointSequenceInput, options?: Parameters<typeof customFetch>[1]): Promise<TracePoint[]> => {
+
+  return customFetch<TracePoint[]>(getReorderTracePointsUrl(branchId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(tracePointSequenceInput)
+  }
+);}
+
+
+
+
+
+export const getReorderTracePointsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderTracePoints>>, TError,{branchId: number;data: BodyType<TracePointSequenceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reorderTracePoints>>, TError,{branchId: number;data: BodyType<TracePointSequenceInput>}, TContext> => {
+
+const mutationKey = ['reorderTracePoints'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reorderTracePoints>>, {branchId: number;data: BodyType<TracePointSequenceInput>}> = (props) => {
+          const {branchId,data} = props ?? {};
+
+          return  reorderTracePoints(branchId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReorderTracePointsMutationResult = NonNullable<Awaited<ReturnType<typeof reorderTracePoints>>>
+    export type ReorderTracePointsMutationBody = BodyType<TracePointSequenceInput>
+    export type ReorderTracePointsMutationError = ErrorType<void>
+
+    export const useReorderTracePoints = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderTracePoints>>, TError,{branchId: number;data: BodyType<TracePointSequenceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reorderTracePoints>>,
+        TError,
+        {branchId: number;data: BodyType<TracePointSequenceInput>},
+        TContext
+      > => {
+      return useMutation(getReorderTracePointsMutationOptions(options));
     }
 
 export const getDeleteTracePointUrl = (branchId: number,

@@ -74,6 +74,10 @@ export interface TracePointInput {
   pointId: number;
 }
 
+export interface TracePointSequenceInput {
+  pointIds: number[];
+}
+
 export type DashboardBranchTypeBreakdownItem = {
   branchTypeId: number;
   branchTypeDescr: string;

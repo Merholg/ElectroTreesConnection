@@ -292,6 +292,24 @@ export const CreateTracePointResponse = zod.object({
 })
 
 
+export const ReorderTracePointsParams = zod.object({
+  "branchId": zod.coerce.number()
+})
+
+export const ReorderTracePointsBody = zod.object({
+  "pointIds": zod.array(zod.int())
+})
+
+export const ReorderTracePointsResponseItem = zod.object({
+  "pointOrder": zod.number(),
+  "branchId": zod.number(),
+  "pointId": zod.number(),
+  "pointCoordX": zod.number(),
+  "pointCoordY": zod.number()
+})
+export const ReorderTracePointsResponse = zod.array(ReorderTracePointsResponseItem)
+
+
 export const DeleteTracePointParams = zod.object({
   "branchId": zod.coerce.number(),
   "pointOrder": zod.coerce.number()

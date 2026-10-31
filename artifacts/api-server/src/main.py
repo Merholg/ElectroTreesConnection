@@ -21,7 +21,7 @@ app = Flask(__name__)
 def add_cors_headers(response: Any) -> Any:
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
     return response
 
 
@@ -538,6 +538,60 @@ def create_trace_point(branch_id: int) -> tuple[Any, int]:
         return jsonify({"error": str(exc)}), 400
     except sqlite3.IntegrityError:
         return jsonify({"error": "Branch or point does not exist, or this order already exists"}), 400
+
+
+@app.put("/api/branches/<int:branch_id>/trace")
+def reorder_trace_points(branch_id: int) -> tuple[Any, int]:
+    payload = body()
+    raw_point_ids = payload.get("pointIds")
+    if not isinstance(raw_point_ids, list) or any(
+        not isinstance(point_id, int) or isinstance(point_id, bool)
+        for point_id in raw_point_ids
+    ):
+        return jsonify({"error": "pointIds must be an array of integer point IDs"}), 400
+
+    point_ids = raw_point_ids
+    if len(point_ids) != len(set(point_ids)):
+        return jsonify({"error": "A tracing point cannot appear more than once"}), 400
+
+    try:
+        with db_cursor() as (_, cursor):
+            cursor.execute("SELECT BranchID FROM Branches WHERE BranchID=?", (branch_id,))
+            if cursor.fetchone() is None:
+                return jsonify({"error": "Branch not found"}), 404
+
+            if point_ids:
+                placeholders = ",".join("?" for _ in point_ids)
+                cursor.execute(
+                    f"SELECT PointID FROM Points WHERE PointID IN ({placeholders})",
+                    tuple(point_ids),
+                )
+                existing_point_ids = {row["PointID"] for row in cursor.fetchall()}
+                if existing_point_ids != set(point_ids):
+                    return jsonify({"error": "One or more tracing points do not exist"}), 400
+
+            cursor.execute("DELETE FROM TracePoint WHERE BranchID=?", (branch_id,))
+            cursor.executemany(
+                "INSERT INTO TracePoint (PointOrder, BranchID, PointID) VALUES (?,?,?)",
+                [
+                    (point_order, branch_id, point_id)
+                    for point_order, point_id in enumerate(point_ids, start=1)
+                ],
+            )
+            cursor.execute(
+                """
+                SELECT t.PointOrder AS pointOrder, t.BranchID AS branchId,
+                       t.PointID AS pointId, p.PointCoordX AS pointCoordX,
+                       p.PointCoordY AS pointCoordY
+                FROM TracePoint t JOIN Points p ON p.PointID=t.PointID
+                WHERE t.BranchID=? ORDER BY t.PointOrder
+                """,
+                (branch_id,),
+            )
+            result = rows(cursor)
+        return jsonify(result)
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "Could not update tracing point order"}), 400
 
 
 @app.delete("/api/trace/<int:branch_id>/<int:point_order>")

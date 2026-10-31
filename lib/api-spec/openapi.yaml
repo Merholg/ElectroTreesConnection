@@ -325,6 +325,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TracePoint"
+    put:
+      operationId: reorderTracePoints
+      tags: [trace]
+      parameters:
+        - name: branchId
+          in: path
+          required: true
+          schema: { type: number }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TracePointSequenceInput"
+      responses:
+        "200":
+          description: Trace points in the new order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TracePoint"
+        "400": { description: Invalid sequence or unknown tracing point }
+        "404": { description: Branch not found }
 
   /trace/{branchId}/{pointOrder}:
     delete:
@@ -427,6 +452,13 @@ components:
       properties:
         pointOrder: { type: number }
         pointId: { type: number }
+    TracePointSequenceInput:
+      type: object
+      required: [pointIds]
+      properties:
+        pointIds:
+          type: array
+          items: { type: integer }
     Dashboard:
       type: object
       required: [branchTypeCount, branchCount, nodeCount, pointCount, tracePointCount, rootNodes, branchTypeBreakdown]

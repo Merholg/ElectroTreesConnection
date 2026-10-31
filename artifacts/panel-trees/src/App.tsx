@@ -6,7 +6,9 @@ import {
   Activity,
   Boxes,
   Cable,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   CircleAlert,
   CircleCheck,
   GitBranch,
@@ -33,6 +35,7 @@ import {
   type PointInput,
   type TracePoint,
   type TracePointInput,
+  type TracePointSequenceInput,
   getDeleteBranchMutationOptions,
   getDeleteNodeMutationOptions,
   getDeletePointMutationOptions,
@@ -56,6 +59,7 @@ import {
   useListNodes,
   useListPoints,
   useListTracePoints,
+  useReorderTracePoints,
 } from '@workspace/api-client-react';
 import { Badge } from '@workspace/electrotrees-ds/components/ui/badge';
 import { Button } from '@workspace/electrotrees-ds/components/ui/button';
@@ -736,6 +740,7 @@ function BranchTracePointManager({
   const tracePoints = useListTracePoints(branchId);
   const addTracePoint = useCreateTracePoint();
   const removeTracePoint = useDeleteTracePoint();
+  const reorderTracePoints = useReorderTracePoints();
   const [selectedPointId, setSelectedPointId] = useState(0);
   const currentTracePoints = tracePoints.data ?? [];
   const usedPointIds = new Set(currentTracePoints.map((point) => point.pointId));
@@ -774,6 +779,24 @@ function BranchTracePointManager({
           toast({ title: 'Точка убрана из трассировки' });
         },
         onError: () => toast({ title: 'Не удалось убрать точку из трассировки', variant: 'destructive' }),
+      },
+    );
+  };
+
+  const handleMove = (index: number, direction: -1 | 1) => {
+    const destination = index + direction;
+    if (destination < 0 || destination >= currentTracePoints.length) return;
+    const pointIds = currentTracePoints.map((point) => point.pointId);
+    [pointIds[index], pointIds[destination]] = [pointIds[destination], pointIds[index]];
+    const data: TracePointSequenceInput = { pointIds };
+    reorderTracePoints.mutate(
+      { branchId, data },
+      {
+        onSuccess: (updatedTracePoints) => {
+          queryClient.setQueryData(getListTracePointsQueryKey(branchId), updatedTracePoints);
+          toast({ title: 'Порядок точек изменён' });
+        },
+        onError: () => toast({ title: 'Не удалось изменить порядок точек', variant: 'destructive' }),
       },
     );
   };
@@ -825,16 +848,38 @@ function BranchTracePointManager({
                       X {point.pointCoordX} · Y {point.pointCoordY}
                     </p>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleRemove(point)}
-                    disabled={removeTracePoint.isPending}
-                    aria-label={`Убрать точку P${point.pointId} из ветви ${branchName}`}
-                    data-testid={`button-remove-trace-point-${branchId}-${point.pointOrder}`}
-                  >
-                    <Trash2 className="size-4 text-destructive" />
-                  </Button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleMove(index, -1)}
+                      disabled={index === 0 || reorderTracePoints.isPending || addTracePoint.isPending || removeTracePoint.isPending}
+                      aria-label={`Переместить точку P${point.pointId} выше`}
+                      data-testid={`button-move-trace-point-up-${branchId}-${point.pointOrder}`}
+                    >
+                      <ChevronUp className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleMove(index, 1)}
+                      disabled={index === currentTracePoints.length - 1 || reorderTracePoints.isPending || addTracePoint.isPending || removeTracePoint.isPending}
+                      aria-label={`Переместить точку P${point.pointId} ниже`}
+                      data-testid={`button-move-trace-point-down-${branchId}-${point.pointOrder}`}
+                    >
+                      <ChevronDown className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleRemove(point)}
+                      disabled={removeTracePoint.isPending || reorderTracePoints.isPending || addTracePoint.isPending}
+                      aria-label={`Убрать точку P${point.pointId} из ветви ${branchName}`}
+                      data-testid={`button-remove-trace-point-${branchId}-${point.pointOrder}`}
+                    >
+                      <Trash2 className="size-4 text-destructive" />
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ol>
@@ -856,7 +901,7 @@ function BranchTracePointManager({
               </div>
               <Button
                 type="submit"
-                disabled={addTracePoint.isPending || removeTracePoint.isPending || !effectivePointId}
+                disabled={addTracePoint.isPending || removeTracePoint.isPending || reorderTracePoints.isPending || !effectivePointId}
                 data-testid={`button-add-trace-point-${branchId}`}
               >
                 {addTracePoint.isPending ? <RefreshCw className="size-4 animate-spin" /> : <Plus className="size-4" />}
