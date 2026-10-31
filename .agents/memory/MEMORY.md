@@ -1,1 +1,2 @@
 - [Database availability](database-availability.md) — use the app's SQLite file and keep real database failures visible; never substitute mock records.
+- [React form field names](react-form-field-names.md) — avoid DOM property names such as `nodeName` for registered form fields; map safe UI field names to API payloads.
