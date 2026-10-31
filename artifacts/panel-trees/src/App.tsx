@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link, Route, Switch, useLocation } from 'wouter';
 import { useForm } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
@@ -31,11 +31,11 @@ import {
   type BranchTypeInput,
   type NodeInput,
   type PointInput,
+  type TracePoint,
   type TracePointInput,
   getDeleteBranchMutationOptions,
   getDeleteNodeMutationOptions,
   getDeletePointMutationOptions,
-  getDeleteTracePointMutationOptions,
   getListBranchesQueryKey,
   getListBranchTypesQueryKey,
   getListNodesQueryKey,
@@ -55,6 +55,7 @@ import {
   useListBranchTypes,
   useListNodes,
   useListPoints,
+  useListTracePoints,
 } from '@workspace/api-client-react';
 import { Badge } from '@workspace/electrotrees-ds/components/ui/badge';
 import { Button } from '@workspace/electrotrees-ds/components/ui/button';
@@ -456,6 +457,7 @@ function BranchesPage() {
   const [search, setSearch] = useState('');
   const [selectedType, setSelectedType] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [expandedBranchId, setExpandedBranchId] = useState<number | null>(null);
   const queryClient = useQueryClient();
   const branches = useListBranches({
     search: search || undefined,
@@ -463,6 +465,7 @@ function BranchesPage() {
   });
   const types = useListBranchTypes();
   const nodes = useListNodes();
+  const points = useListPoints();
   const create = useCreateBranch();
   const remove = useDeleteBranch();
 
@@ -470,9 +473,10 @@ function BranchesPage() {
     create.mutate(
       { data: payload },
       {
-        onSuccess: () => {
+        onSuccess: (branch) => {
           toast({ title: 'Ветвь добавлена', description: 'Связь записана в SQLite.' });
           setShowCreate(false);
+          setExpandedBranchId(branch.branchId);
           queryClient.invalidateQueries({ queryKey: getListBranchesQueryKey() });
           queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
         },
@@ -488,6 +492,7 @@ function BranchesPage() {
       {
         onSuccess: () => {
           toast({ title: 'Ветвь удалена' });
+          if (expandedBranchId === branch.branchId) setExpandedBranchId(null);
           queryClient.invalidateQueries({ queryKey: getListBranchesQueryKey() });
           queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
         },
@@ -501,7 +506,7 @@ function BranchesPage() {
       <PageHeading
         eyebrow="connection registry / branches"
         title="Ветви и провода"
-        description="Связи между узлами щита. Ищите по имени, фильтруйте по типу и контролируйте направление каждой ветви."
+        description="Связи между узлами щита с упорядоченными промежуточными точками трассировки."
         action={
           <Button onClick={() => setShowCreate((value) => !value)} data-testid="button-add-branch">
             <Plus className="size-4" />
@@ -562,23 +567,24 @@ function BranchesPage() {
             <EmptyState title="Ветви не найдены" description="Измените фильтр или добавьте первую связь." />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-left text-sm">
+              <table className="w-full min-w-[900px] text-left text-sm">
                 <thead className="border-b border-border/70 bg-muted/30 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                   <tr>
                     <th className="px-5 py-3 font-medium">ветвь</th>
                     <th className="px-5 py-3 font-medium">тип</th>
                     <th className="px-5 py-3 font-medium">направление</th>
+                    <th className="px-5 py-3 font-medium">трассировка</th>
                     <th className="px-5 py-3 font-medium">id</th>
                     <th className="px-5 py-3 text-right font-medium">действия</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
                   {(branches.data ?? []).map((branch) => (
-                    <tr
-                      key={branch.branchId}
-                      className="group transition-colors hover:bg-muted/25"
-                      data-testid={`row-branch-${branch.branchId}`}
-                    >
+                    <Fragment key={branch.branchId}>
+                      <tr
+                        className="group transition-colors hover:bg-muted/25"
+                        data-testid={`row-branch-${branch.branchId}`}
+                      >
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
                           <span className="grid size-8 place-items-center rounded border border-primary/30 bg-primary/10 text-primary">
@@ -595,6 +601,19 @@ function BranchesPage() {
                         <span className="mx-2 text-primary">→</span>
                         <span className="text-chart-3">N{branch.branchEndNode}</span>
                       </td>
+                      <td className="px-5 py-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setExpandedBranchId((current) => current === branch.branchId ? null : branch.branchId)}
+                          aria-expanded={expandedBranchId === branch.branchId}
+                          aria-controls={`trace-editor-${branch.branchId}`}
+                          data-testid={`button-toggle-trace-${branch.branchId}`}
+                        >
+                          <Waypoints className="size-4" />
+                          {expandedBranchId === branch.branchId ? 'Скрыть точки' : 'Точки трассы'}
+                        </Button>
+                      </td>
                       <td className="px-5 py-4 font-mono text-xs text-muted-foreground">
                         BR-{String(branch.branchId).padStart(4, '0')}
                       </td>
@@ -610,7 +629,26 @@ function BranchesPage() {
                           <Trash2 className="size-4 text-destructive" />
                         </Button>
                       </td>
-                    </tr>
+                      </tr>
+                      {expandedBranchId === branch.branchId && (
+                        <tr className="bg-muted/10" data-testid={`row-trace-editor-${branch.branchId}`}>
+                          <td colSpan={6} className="px-5 py-4">
+                            <BranchTracePointManager
+                              branchId={branch.branchId}
+                              branchName={branch.branchName}
+                              branchBeginNode={branch.branchBeginNode}
+                              branchEndNode={branch.branchEndNode}
+                              points={points.data ?? []}
+                              pointsLoading={points.isLoading}
+                              pointsError={points.isError}
+                              endpointPointIds={(nodes.data ?? [])
+                                .filter((node) => node.nodeId === branch.branchBeginNode || node.nodeId === branch.branchEndNode)
+                                .map((node) => node.pointId)}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -644,7 +682,7 @@ function CreateBranchCard({
         <div className="flex items-start justify-between">
           <div>
             <CardTitle className="text-base">Новая ветвь</CardTitle>
-            <CardDescription className="mt-1">Свяжите два существующих узла.</CardDescription>
+            <CardDescription className="mt-1">Свяжите два узла; промежуточные точки трассировки добавляются после создания.</CardDescription>
           </div>
           <Button variant="ghost" size="icon" onClick={onCancel} data-testid="button-cancel-branch">
             <X className="size-4" />
@@ -672,6 +710,171 @@ function CreateBranchCard({
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+function BranchTracePointManager({
+  branchId,
+  branchName,
+  branchBeginNode,
+  branchEndNode,
+  points,
+  pointsLoading,
+  pointsError,
+  endpointPointIds,
+}: {
+  branchId: number;
+  branchName: string;
+  branchBeginNode: number;
+  branchEndNode: number;
+  points: { pointId: number; pointCoordX: number; pointCoordY: number }[];
+  pointsLoading: boolean;
+  pointsError: boolean;
+  endpointPointIds: number[];
+}) {
+  const queryClient = useQueryClient();
+  const tracePoints = useListTracePoints(branchId);
+  const addTracePoint = useCreateTracePoint();
+  const removeTracePoint = useDeleteTracePoint();
+  const [selectedPointId, setSelectedPointId] = useState(0);
+  const currentTracePoints = tracePoints.data ?? [];
+  const usedPointIds = new Set(currentTracePoints.map((point) => point.pointId));
+  const endpointIds = new Set(endpointPointIds);
+  const availablePoints = points.filter((point) => !usedPointIds.has(point.pointId) && !endpointIds.has(point.pointId));
+  const effectivePointId = availablePoints.some((point) => point.pointId === selectedPointId)
+    ? selectedPointId
+    : availablePoints[0]?.pointId ?? 0;
+
+  const handleAdd = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!effectivePointId) return;
+    const pointOrder = Math.max(0, ...currentTracePoints.map((point) => point.pointOrder)) + 1;
+    const data: TracePointInput = { pointOrder, pointId: effectivePointId };
+    addTracePoint.mutate(
+      { branchId, data },
+      {
+        onSuccess: () => {
+          setSelectedPointId(0);
+          queryClient.invalidateQueries({ queryKey: getListTracePointsQueryKey(branchId) });
+          queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
+          toast({ title: 'Точка добавлена в трассировку', description: `Порядок ${pointOrder}.` });
+        },
+        onError: () => toast({ title: 'Не удалось добавить точку трассировки', variant: 'destructive' }),
+      },
+    );
+  };
+
+  const handleRemove = (point: TracePoint) => {
+    removeTracePoint.mutate(
+      { branchId, pointOrder: point.pointOrder },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListTracePointsQueryKey(branchId) });
+          queryClient.invalidateQueries({ queryKey: ['/api/dashboard'] });
+          toast({ title: 'Точка убрана из трассировки' });
+        },
+        onError: () => toast({ title: 'Не удалось убрать точку из трассировки', variant: 'destructive' }),
+      },
+    );
+  };
+
+  return (
+    <section
+      id={`trace-editor-${branchId}`}
+      className="rounded-md border border-border/70 bg-background/40 p-4"
+      data-testid={`trace-manager-${branchId}`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Waypoints className="size-4 text-primary" />
+            <h3 className="text-sm font-medium">Точки трассировки · {branchName}</h3>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Порядок от узла N{branchBeginNode} к узлу N{branchEndNode}. Новые точки добавляются в конец.
+          </p>
+        </div>
+        <Badge variant="outline">{currentTracePoints.length} промежуточных</Badge>
+      </div>
+
+      {tracePoints.isLoading || pointsLoading ? (
+        <LoadingState label="Загрузка точек трассировки…" />
+      ) : tracePoints.isError || pointsError ? (
+        <ErrorState />
+      ) : (
+        <>
+          {currentTracePoints.length === 0 ? (
+            <p className="mt-4 rounded-md border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">
+              Промежуточные точки не добавлены.
+            </p>
+          ) : (
+            <ol className="mt-4 space-y-2">
+              {currentTracePoints.map((point, index) => (
+                <li
+                  key={`${point.branchId}-${point.pointOrder}`}
+                  className="flex items-center gap-3 rounded-md border border-border/60 bg-card px-3 py-2"
+                  data-testid={`row-trace-point-${branchId}-${point.pointOrder}`}
+                >
+                  <span className="grid size-7 shrink-0 place-items-center rounded border border-primary/30 bg-primary/10 font-mono text-xs text-primary">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <MapPin className="size-4 shrink-0 text-chart-3" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-mono text-sm text-foreground">P{point.pointId}</p>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      X {point.pointCoordX} · Y {point.pointCoordY}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleRemove(point)}
+                    disabled={removeTracePoint.isPending}
+                    aria-label={`Убрать точку P${point.pointId} из ветви ${branchName}`}
+                    data-testid={`button-remove-trace-point-${branchId}-${point.pointOrder}`}
+                  >
+                    <Trash2 className="size-4 text-destructive" />
+                  </Button>
+                </li>
+              ))}
+            </ol>
+          )}
+
+          {availablePoints.length > 0 ? (
+            <form className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={handleAdd}>
+              <div className="min-w-0 flex-1">
+                <SelectField
+                  label="Следующая промежуточная точка"
+                  value={effectivePointId}
+                  onChange={(value) => setSelectedPointId(Number(value))}
+                  options={availablePoints.map((point) => ({
+                    value: point.pointId,
+                    label: `P${point.pointId} · (${point.pointCoordX}, ${point.pointCoordY})`,
+                  }))}
+                  testId={`select-trace-point-${branchId}`}
+                />
+              </div>
+              <Button
+                type="submit"
+                disabled={addTracePoint.isPending || removeTracePoint.isPending || !effectivePointId}
+                data-testid={`button-add-trace-point-${branchId}`}
+              >
+                {addTracePoint.isPending ? <RefreshCw className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                Добавить в трассу
+              </Button>
+            </form>
+          ) : points.length === 0 ? (
+            <p className="mt-4 text-sm text-muted-foreground">
+              Сначала создайте координатные точки на странице «Точки трассировки».
+            </p>
+          ) : (
+            <p className="mt-4 text-sm text-muted-foreground">
+              Нет свободных промежуточных точек: конечные точки и уже добавленные точки нельзя выбрать повторно.
+            </p>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 

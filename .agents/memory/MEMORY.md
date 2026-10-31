@@ -1,2 +1,3 @@
 - [Database availability](database-availability.md) — use the app's SQLite file and keep real database failures visible; never substitute mock records.
 - [React form field names](react-form-field-names.md) — avoid DOM property names such as `nodeName` for registered form fields; map safe UI field names to API payloads.
+- [Branch route semantics](branch-route-semantics.md) — a branch has endpoint nodes and may traverse zero or more ordered tracing points.
